@@ -91,7 +91,15 @@ func run(ctx context.Context) error {
 		telegram.SendCodeOptions{},
 	)
 
-	// Creating new rpc tg.Client.
+	// Creating new RPC client.
+	//
+	// The tg.Client is generated from Telegram schema and implements
+	// invocation of all defined Telegram MTProto methods on top of tg.Invoker.
+	// E.g. api.MessagesSendMessage() is messages.sendMessage method.
+	//
+	// The tg.Invoker interface is implemented by client (telegram.Client) and
+	// allows calling any MTProto method, like that:
+	//	InvokeRaw(ctx context.Context, input bin.Encoder, output bin.Decoder) error
 	api := tg.NewClient(client)
 
 	// Connecting, performing authentication and downloading gifs.
