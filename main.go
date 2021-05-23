@@ -14,6 +14,7 @@ import (
 
 	"github.com/gotd/contrib/middleware/ratelimit"
 	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
 	"go.uber.org/zap"
@@ -88,10 +89,7 @@ func run(ctx context.Context) error {
 
 	// Setting up authentication flow.
 	// Current flow will read phone, code and 2FA password from terminal.
-	flow := telegram.NewAuth(
-		terminalAuth{},
-		telegram.SendCodeOptions{},
-	)
+	flow := auth.NewFlow(terminalAuth{}, auth.SendCodeOptions{})
 
 	// Creating new RPC client.
 	//
@@ -110,7 +108,7 @@ func run(ctx context.Context) error {
 	// Connecting, performing authentication and downloading gifs.
 	return client.Run(ctx, func(ctx context.Context) error {
 		// Perform auth if no session is available.
-		if err := client.AuthIfNecessary(ctx, flow); err != nil {
+		if err := client.Auth().IfNecessary(ctx, flow); err != nil {
 			return xerrors.Errorf("auth: %w", err)
 		}
 
