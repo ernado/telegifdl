@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gotd/td/middleware"
+	"github.com/gotd/td/middleware/ratelimit"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
@@ -19,6 +21,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/time/rate"
 	"golang.org/x/xerrors"
 )
 
@@ -61,11 +64,11 @@ func (terminalAuth) Password(_ context.Context) (string, error) {
 
 func run(ctx context.Context) error {
 	var (
-		outputDir string
-		jobs      int
+		outputDir = flag.String("out", os.TempDir(), "output directory")
+		jobs      = flag.Int("j", 3, "maximum concurrent download jobs")
+		rateLimit = flag.Duration("rate", time.Millisecond*100, "limit maximum rpc call rate")
+		rateBurst = flag.Int("rate-burst", 3, "limit rpc call burst")
 	)
-	flag.StringVar(&outputDir, "out", os.TempDir(), "output directory")
-	flag.IntVar(&jobs, "j", 3, "maximum concurrent download jobs")
 	flag.Parse()
 
 	log, _ := zap.NewDevelopment(zap.IncreaseLevel(zapcore.InfoLevel), zap.AddStacktrace(zapcore.FatalLevel))
@@ -79,6 +82,10 @@ func run(ctx context.Context) error {
 	// 	SESSION_DIR:    path to session directory, if SESSION_FILE is not set
 	client, err := telegram.ClientFromEnvironment(telegram.Options{
 		Logger: log,
+		Middleware: middleware.Chain(
+			// Rate-limiting RPC calls.
+			ratelimit.Middleware(rate.NewLimiter(rate.Every(*rateLimit), *rateBurst)),
+		),
 	})
 	if err != nil {
 		return err
@@ -110,7 +117,7 @@ func run(ctx context.Context) error {
 		}
 
 		// Processing gifs.
-		gifs := make(chan *tg.Document, jobs)
+		gifs := make(chan *tg.Document, *jobs)
 		g, ctx := errgroup.WithContext(ctx)
 		g.Go(func() error {
 			defer close(gifs)
@@ -144,12 +151,12 @@ func run(ctx context.Context) error {
 			return nil
 		})
 
-		for j := 0; j < jobs; j++ {
+		for j := 0; j < *jobs; j++ {
 			g.Go(func() error {
 				// Process all discovered gifs.
 				d := downloader.NewDownloader()
 				for doc := range gifs {
-					gifPath := filepath.Join(outputDir, fmt.Sprintf("%d.mp4", doc.ID))
+					gifPath := filepath.Join(*outputDir, fmt.Sprintf("%d.mp4", doc.ID))
 					log.Info("Got GIF",
 						zap.Int64("id", doc.ID),
 						zap.Time("date", time.Unix(int64(doc.Date), 0)),
