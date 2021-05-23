@@ -12,8 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gotd/td/middleware"
-	"github.com/gotd/td/middleware/ratelimit"
+	"github.com/gotd/contrib/middleware/ratelimit"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
@@ -82,10 +81,6 @@ func run(ctx context.Context) error {
 	// 	SESSION_DIR:    path to session directory, if SESSION_FILE is not set
 	client, err := telegram.ClientFromEnvironment(telegram.Options{
 		Logger: log,
-		Middleware: middleware.Chain(
-			// Rate-limiting RPC calls.
-			ratelimit.Middleware(rate.NewLimiter(rate.Every(*rateLimit), *rateBurst)),
-		),
 	})
 	if err != nil {
 		return err
@@ -107,7 +102,10 @@ func run(ctx context.Context) error {
 	// The tg.Invoker interface is implemented by client (telegram.Client) and
 	// allows calling any MTProto method, like that:
 	//	InvokeRaw(ctx context.Context, input bin.Encoder, output bin.Decoder) error
-	api := tg.NewClient(client)
+	api := tg.NewClient(
+		// Wrapping invoker and rate-limiting RPC calls.
+		ratelimit.Middleware(rate.NewLimiter(rate.Every(*rateLimit), *rateBurst))(client),
+	)
 
 	// Connecting, performing authentication and downloading gifs.
 	return client.Run(ctx, func(ctx context.Context) error {
