@@ -68,6 +68,7 @@ func (terminalAuth) Password(_ context.Context) (string, error) {
 func run(ctx context.Context) error {
 	var (
 		outputDir = flag.String("out", os.TempDir(), "output directory")
+		inputDir  = flag.String("input", "", "input directory for uploads")
 		jobs      = flag.Int("j", 3, "maximum concurrent download jobs")
 		rateLimit = flag.Duration("rate", time.Millisecond*100, "limit maximum rpc call rate")
 		rateBurst = flag.Int("rate-burst", 3, "limit rpc call burst")
@@ -113,6 +114,13 @@ func run(ctx context.Context) error {
 		// Perform auth if no session is available.
 		if err := client.Auth().IfNecessary(ctx, flow); err != nil {
 			return xerrors.Errorf("auth: %w", err)
+		}
+
+		if *inputDir != "" {
+			// Handling bulk GIF upload.
+			if err := upload(ctx, log, api, *inputDir); err != nil {
+				return xerrors.Errorf("upload: %w", err)
+			}
 		}
 
 		// Processing gifs.
