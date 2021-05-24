@@ -117,7 +117,8 @@ func run(ctx context.Context) error {
 		}
 
 		if *inputDir != "" {
-			// Handling bulk GIF upload.
+			// Handling bulk upload.
+			// Probably we can de-duplicate gifs by some criteria.
 			if err := upload(ctx, log, api, *inputDir); err != nil {
 				return xerrors.Errorf("upload: %w", err)
 			}

@@ -13,6 +13,9 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// upload lists inputDir and uploads all ".mp4" files to saved gifs.
+//
+// NB: Uses "Saved Messages" as temporary place for uploads.
 func upload(ctx context.Context, log *zap.Logger, api *tg.Client, inputDir string) error {
 	// Upload all gifs from requested dir.
 	entries, err := os.ReadDir(inputDir)
