@@ -70,6 +70,7 @@ func run(ctx context.Context) error {
 		outputDir = flag.String("out", os.TempDir(), "output directory")
 		inputDir  = flag.String("input", "", "input directory for uploads")
 		jobs      = flag.Int("j", 3, "maximum concurrent download jobs")
+		remove    = flag.Bool("rm", false, "remove downloaded gifs")
 		rateLimit = flag.Duration("rate", time.Millisecond*100, "limit maximum rpc call rate")
 		rateBurst = flag.Int("rate-burst", 3, "limit rpc call burst")
 	)
@@ -172,7 +173,7 @@ func run(ctx context.Context) error {
 				for doc := range gifs {
 					total.Inc()
 					gifPath := filepath.Join(*outputDir, fmt.Sprintf("%d.mp4", doc.ID))
-					log.Info("Got GIF",
+					log.Info("Got gif",
 						zap.Int64("id", doc.ID),
 						zap.Time("date", time.Unix(int64(doc.Date), 0)),
 						zap.String("path", gifPath),
@@ -188,8 +189,21 @@ func run(ctx context.Context) error {
 					if _, err := d.Download(api, loc).ToPath(ctx, gifPath); err != nil {
 						return xerrors.Errorf("download: %w", err)
 					}
-
 					downloaded.Inc()
+
+					if *remove {
+						log.Info("Removing gif after download",
+							zap.Int64("id", doc.ID),
+							zap.Time("date", time.Unix(int64(doc.Date), 0)),
+							zap.String("path", gifPath),
+						)
+						if _, err := api.MessagesSaveGif(ctx, &tg.MessagesSaveGifRequest{
+							ID:     doc.AsInput(),
+							Unsave: true,
+						}); err != nil {
+							return xerrors.Errorf("remove: %w", err)
+						}
+					}
 				}
 
 				return nil
