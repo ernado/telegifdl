@@ -16,6 +16,7 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/downloader"
+	"github.com/gotd/td/telegram/query/hasher"
 	"github.com/gotd/td/tg"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -120,33 +121,45 @@ func run(ctx context.Context) error {
 		g.Go(func() error {
 			defer close(gifs)
 
-			result, err := api.MessagesGetSavedGifs(ctx, 0)
-			if err != nil {
-				return xerrors.Errorf("get: %w", err)
-			}
+			// Telegram pagination uses hashes, i.e. you can request new page
+			// by hash that is calculated from ids of entities that were
+			// already received.
+			//
+			// Hasher implements Telegram pagination hash calculation.
+			h := hasher.Hasher{}
 
-			switch result := result.(type) {
-			case *tg.MessagesSavedGifsNotModified:
-				// Should not be reachable, means that result by paginationHash was not changed.
-				return nil
-			case *tg.MessagesSavedGifs:
-				if len(result.Gifs) == 0 {
-					// No more results.
-					return nil
+			for {
+				result, err := api.MessagesGetSavedGifs(ctx, int(h.Sum()))
+				if err != nil {
+					return xerrors.Errorf("get: %w", err)
 				}
 
-				// Processing batch.
-				for _, doc := range result.Gifs {
-					doc, ok := doc.AsNotEmpty()
-					if !ok {
-						continue
+				switch result := result.(type) {
+				case *tg.MessagesSavedGifsNotModified:
+					// Should not be reachable, means that result by paginationHash was not changed.
+					return nil
+				case *tg.MessagesSavedGifs:
+					if len(result.Gifs) == 0 {
+						// No more results.
+						return nil
 					}
 
-					gifs <- doc
-				}
-			}
+					// Processing batch.
+					for _, doc := range result.Gifs {
+						doc, ok := doc.AsNotEmpty()
+						if !ok {
+							continue
+						}
 
-			return nil
+						gifs <- doc
+
+						// Update pagination hash with document id.
+						h.Update(uint32(doc.ID))
+					}
+				}
+
+				return nil
+			}
 		})
 
 		for j := 0; j < *jobs; j++ {
