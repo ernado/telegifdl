@@ -16,6 +16,7 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/downloader"
+	"github.com/gotd/td/telegram/query/hasher"
 	"github.com/gotd/td/tg"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -131,35 +132,44 @@ func run(ctx context.Context) error {
 		g.Go(func() error {
 			defer close(gifs)
 
-			result, err := api.MessagesGetSavedGifs(ctx, 0)
-			if err != nil {
-				return xerrors.Errorf("get: %w", err)
-			}
-
-			switch result := result.(type) {
-			case *tg.MessagesSavedGifsNotModified:
-				return xerrors.New("unexpected MessagesSavedGifsNotModified")
-			case *tg.MessagesSavedGifs:
-				log.Info("Got gifs",
-					zap.Int("count", len(result.Gifs)),
-				)
-				if len(result.Gifs) == 0 {
-					// No results.
-					return nil
+			// Telegram allows up to 200 saved gifs, but only hides exceeding
+			// ones.
+			//
+			// Hasher implements Telegram "pagination" hash calculation and
+			// allows us exhaust all gifs in "rm" mode.
+			h := hasher.Hasher{}
+			for {
+				result, err := api.MessagesGetSavedGifs(ctx, int(h.Sum()))
+				if err != nil {
+					return xerrors.Errorf("get: %w", err)
 				}
 
-				// Processing batch.
-				for _, doc := range result.Gifs {
-					doc, ok := doc.AsNotEmpty()
-					if !ok {
-						continue
+				h.Reset()
+				switch result := result.(type) {
+				case *tg.MessagesSavedGifsNotModified:
+					// Done.
+					return nil
+				case *tg.MessagesSavedGifs:
+					log.Info("Got gifs",
+						zap.Int("count", len(result.Gifs)),
+					)
+					if len(result.Gifs) == 0 {
+						// No results.
+						return nil
 					}
 
-					gifs <- doc
+					// Processing batch.
+					for _, doc := range result.Gifs {
+						doc, ok := doc.AsNotEmpty()
+						if !ok {
+							continue
+						}
+
+						gifs <- doc
+						h.Update64(uint64(doc.ID))
+					}
 				}
 			}
-
-			return nil
 		})
 
 		var (
