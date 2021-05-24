@@ -195,7 +195,6 @@ func run(ctx context.Context) error {
 						log.Info("Removing gif after download",
 							zap.Int64("id", doc.ID),
 							zap.Time("date", time.Unix(int64(doc.Date), 0)),
-							zap.String("path", gifPath),
 						)
 						if _, err := api.MessagesSaveGif(ctx, &tg.MessagesSaveGifRequest{
 							ID:     doc.AsInput(),
