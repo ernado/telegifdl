@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/gotd/td/telegram/message"
+	"github.com/gotd/td/telegram/message/unpack"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 	"go.uber.org/zap"
@@ -48,39 +49,14 @@ func upload(ctx context.Context, log *zap.Logger, api *tg.Client, inputDir strin
 
 		// To be valid, media should have "animated" attribute and video/mp4
 		// MIME-type.
-		upd, err := sender.Media(ctx, message.UploadedDocument(f).
+		msg, err := unpack.Message(sender.Media(ctx, message.UploadedDocument(f).
 			Attributes(&tg.DocumentAttributeAnimated{}).
 			MIME("video/mp4"),
-		)
+		))
 		if err != nil {
 			return err
 		}
-		// Looking for sent message that contains uploaded media.
-		// Very much boilerplate and not so reliable.
-		var (
-			sentID    int
-			sentMedia tg.MessageMediaClass
-		)
-		switch upd := upd.(type) {
-		case *tg.UpdateShortSentMessage:
-			sentID = upd.ID
-			sentMedia = upd.Media
-		case *tg.Updates:
-			for _, u := range upd.Updates {
-				switch u := u.(type) {
-				case *tg.UpdateNewMessage:
-					msg := u.Message.(*tg.Message)
-					sentID = msg.ID
-					sentMedia = msg.Media
-				}
-			}
-			if sentID == 0 {
-				return xerrors.New("unable to find sent message")
-			}
-		default:
-			return xerrors.Errorf("unexpected update type %T", upd)
-		}
-		doc, ok := sentMedia.(*tg.MessageMediaDocument).Document.AsNotEmpty()
+		doc, ok := msg.Media.(*tg.MessageMediaDocument).Document.AsNotEmpty()
 		if !ok {
 			return xerrors.New("unexpected document")
 		}
@@ -91,7 +67,7 @@ func upload(ctx context.Context, log *zap.Logger, api *tg.Client, inputDir strin
 			Unsave: false,
 		})
 		// Cleaning up "buffer" message.
-		if _, deleteErr := sender.Revoke().Messages(ctx, sentID); deleteErr != nil {
+		if _, deleteErr := sender.Revoke().Messages(ctx, msg.ID); deleteErr != nil {
 			return xerrors.Errorf("delete: %w", err)
 		}
 		// Checking for actual save error.
