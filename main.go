@@ -16,8 +16,8 @@ import (
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/telegram/downloader"
-	"github.com/gotd/td/telegram/query/hasher"
 	"github.com/gotd/td/tg"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/crypto/ssh/terminal"
@@ -130,52 +130,48 @@ func run(ctx context.Context) error {
 		g.Go(func() error {
 			defer close(gifs)
 
-			// Telegram pagination uses hashes, i.e. you can request new page
-			// by hash that is calculated from ids of entities that were
-			// already received.
-			//
-			// Hasher implements Telegram pagination hash calculation.
-			h := hasher.Hasher{}
-
-			for {
-				result, err := api.MessagesGetSavedGifs(ctx, int(h.Sum()))
-				if err != nil {
-					return xerrors.Errorf("get: %w", err)
-				}
-
-				switch result := result.(type) {
-				case *tg.MessagesSavedGifsNotModified:
-					// Should not be reachable, means that result by paginationHash was not changed.
-					return nil
-				case *tg.MessagesSavedGifs:
-					if len(result.Gifs) == 0 {
-						// No more results.
-						return nil
-					}
-
-					// Processing batch.
-					for _, doc := range result.Gifs {
-						doc, ok := doc.AsNotEmpty()
-						if !ok {
-							continue
-						}
-
-						gifs <- doc
-
-						// Update pagination hash with document id.
-						h.Update(uint32(doc.ID))
-					}
-				}
-
-				return nil
+			result, err := api.MessagesGetSavedGifs(ctx, 0)
+			if err != nil {
+				return xerrors.Errorf("get: %w", err)
 			}
+
+			switch result := result.(type) {
+			case *tg.MessagesSavedGifsNotModified:
+				return xerrors.New("unexpected MessagesSavedGifsNotModified")
+			case *tg.MessagesSavedGifs:
+				log.Info("Got gifs",
+					zap.Int("count", len(result.Gifs)),
+				)
+				if len(result.Gifs) == 0 {
+					// No results.
+					return nil
+				}
+
+				// Processing batch.
+				for _, doc := range result.Gifs {
+					doc, ok := doc.AsNotEmpty()
+					if !ok {
+						continue
+					}
+
+					gifs <- doc
+
+				}
+			}
+
+			return nil
 		})
 
+		var (
+			total      atomic.Int32
+			downloaded atomic.Int32
+		)
 		for j := 0; j < *jobs; j++ {
 			g.Go(func() error {
 				// Process all discovered gifs.
 				d := downloader.NewDownloader()
 				for doc := range gifs {
+					total.Inc()
 					gifPath := filepath.Join(*outputDir, fmt.Sprintf("%d.mp4", doc.ID))
 					log.Info("Got GIF",
 						zap.Int64("id", doc.ID),
@@ -193,13 +189,23 @@ func run(ctx context.Context) error {
 					if _, err := d.Download(api, loc).ToPath(ctx, gifPath); err != nil {
 						return xerrors.Errorf("download: %w", err)
 					}
+
+					downloaded.Inc()
 				}
 
 				return nil
 			})
 		}
 
-		return g.Wait()
+		if err := g.Wait(); err != nil {
+			return err
+		}
+		log.Info("Finished OK",
+			zap.Int32("downloaded", downloaded.Load()),
+			zap.Int32("total", total.Load()),
+		)
+
+		return nil
 	})
 }
 
