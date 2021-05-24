@@ -181,6 +181,10 @@ func run(ctx context.Context) error {
 
 					if _, err := os.Stat(gifPath); err == nil {
 						// File exists, skipping.
+						//
+						// Note that we are not completely sure that existing
+						// file is exactly same as this gif (e.g. partial
+						// download), so not removing even with --rm flag.
 						continue
 					}
 
