@@ -25,14 +25,16 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// terminalAuth implements auth.UserAuthenticator prompting the terminal for
+// input.
 type terminalAuth struct{}
 
-func (terminalAuth) SignUp(ctx context.Context) (telegram.UserInfo, error) {
-	return telegram.UserInfo{}, xerrors.New("not implemented")
+func (terminalAuth) SignUp(ctx context.Context) (auth.UserInfo, error) {
+	return auth.UserInfo{}, xerrors.New("not implemented")
 }
 
 func (terminalAuth) AcceptTermsOfService(ctx context.Context, tos tg.HelpTermsOfService) error {
-	return &telegram.SignUpRequired{TermsOfService: tos}
+	return &auth.SignUpRequired{TermsOfService: tos}
 }
 
 func (terminalAuth) Code(ctx context.Context, sentCode *tg.AuthSentCode) (string, error) {
