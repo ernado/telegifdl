@@ -39,12 +39,21 @@ func upload(ctx context.Context, log *zap.Logger, api *tg.Client, inputDir strin
 			return err
 		}
 
-		// Sending gif to self.
+		// Using "Saved messages" as upload buffer, because we can't directly
+		// upload gifs to "saved gifs".
 		sender := message.NewSender(api).Self()
-		upd, err := sender.Media(ctx, message.UploadedDocument(f).GIF())
+
+		// To be valid, media should have "animated" attribute and video/mp4
+		// MIME-type.
+		upd, err := sender.Media(ctx, message.UploadedDocument(f).
+			Attributes(&tg.DocumentAttributeAnimated{}).
+			MIME("video/mp4"),
+		)
 		if err != nil {
 			return err
 		}
+		// Looking for sent message that contains uploaded media.
+		// Very much boilerplate and not so reliable.
 		var (
 			sentID    int
 			sentMedia tg.MessageMediaClass
@@ -72,19 +81,21 @@ func upload(ctx context.Context, log *zap.Logger, api *tg.Client, inputDir strin
 		if !ok {
 			return xerrors.New("unexpected document")
 		}
+
+		// Actually saving GIF.
 		_, saveErr := api.MessagesSaveGif(ctx, &tg.MessagesSaveGifRequest{
 			ID:     doc.AsInput(),
 			Unsave: false,
 		})
-		// Cleanup message.
+		// Cleaning up "buffer" message.
 		if _, deleteErr := sender.Revoke().Messages(ctx, sentID); deleteErr != nil {
 			return xerrors.Errorf("delete: %w", err)
 		}
+		// Checking for actual save error.
 		if saveErr != nil {
 			return xerrors.Errorf("save: %w", saveErr)
 		}
-
-		log.Info("Uploaded gif", zap.String("name", name))
+		log.Info("Saved", zap.String("name", name))
 	}
 
 	return nil

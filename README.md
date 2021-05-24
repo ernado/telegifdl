@@ -1,6 +1,6 @@
 # telegifdl
 
-Tool for Telegram GIF collection backup.
+Tool for Telegram saved gifs backup (and upload).
 
 ```
 go install github.com/ernado/telegifdl@latest
