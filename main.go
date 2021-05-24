@@ -155,7 +155,6 @@ func run(ctx context.Context) error {
 					}
 
 					gifs <- doc
-
 				}
 			}
 
