@@ -165,8 +165,12 @@ func run(ctx context.Context) error {
 							continue
 						}
 
-						gifs <- doc
-						h.Update64(uint64(doc.ID))
+						select {
+						case gifs <- doc:
+							h.Update64(uint64(doc.ID))
+						case <-ctx.Done():
+							return ctx.Err()
+						}
 					}
 				}
 			}
