@@ -88,6 +88,9 @@ func run(ctx context.Context) error {
 	// 	SESSION_DIR:    path to session directory, if SESSION_FILE is not set
 	client, err := telegram.ClientFromEnvironment(telegram.Options{
 		Logger: log,
+		Middlewares: []telegram.Middleware{
+			ratelimit.New(rate.Every(*rateLimit), *rateBurst),
+		},
 	})
 	if err != nil {
 		return err
@@ -105,11 +108,8 @@ func run(ctx context.Context) error {
 	//
 	// The tg.Invoker interface is implemented by client (telegram.Client) and
 	// allows calling any MTProto method, like that:
-	//	InvokeRaw(ctx context.Context, input bin.Encoder, output bin.Decoder) error
-	api := tg.NewClient(
-		// Wrapping invoker and rate-limiting RPC calls.
-		ratelimit.Middleware(rate.NewLimiter(rate.Every(*rateLimit), *rateBurst))(client),
-	)
+	//	Invoke(ctx context.Context, input bin.Encoder, output bin.Decoder) error
+	api := client.API()
 
 	// Connecting, performing authentication and downloading gifs.
 	return client.Run(ctx, func(ctx context.Context) error {
