@@ -68,7 +68,7 @@ func upload(ctx context.Context, log *zap.Logger, api *tg.Client, inputDir strin
 		})
 		// Cleaning up "buffer" message.
 		if _, deleteErr := sender.Revoke().Messages(ctx, msg.ID); deleteErr != nil {
-			return xerrors.Errorf("delete: %w", err)
+			return xerrors.Errorf("delete: %w", deleteErr)
 		}
 		// Checking for actual save error.
 		if saveErr != nil {
